@@ -7,8 +7,11 @@ import {
     S3Client,
     PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { SES_EMAIL_FROM, SES_EMAIL_TO, SES_REGION } from "../env";
+import { DynamoDB, PutItemCommand } from "@aws-sdk/client-dynamodb";
 
 const s3 = new S3Client();
+const dynamoDBClient = new DynamoDB({region: SES_REGION});
 
 export const handler: SQSHandler = async (event) => {
     console.log("Event ", JSON.stringify(event));
@@ -39,8 +42,23 @@ export const handler: SQSHandler = async (event) => {
                     };
                     origimage = await s3.send(new GetObjectCommand(params));
                     // Process the image ......
+                    console.log("Image downloaded successfully");
+
+                    //after processing, store result in DynamoDB
+                    const dbParams = {
+                        TableName: 'ImageDataTable',
+                        Item: {
+                            filename: {S: srcKey},
+                            bucket: {S: srcBucket},
+                            processDate: {S: new Date().toISOString()}
+                        }
+                    };
+                    await dynamoDBClient.send(new PutItemCommand(dbParams));
+                    console.log('Image data saved to DynamoDB');
+                
                 } catch (error) {
                     console.log(error);
+                    console.error("Error in processing or saving data:", error);
                     // Error handling
 
                 }

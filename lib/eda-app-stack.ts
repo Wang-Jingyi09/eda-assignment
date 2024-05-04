@@ -8,6 +8,7 @@ import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 
 import { Construct } from "constructs";
 export class EDAAppStack extends cdk.Stack {
@@ -21,13 +22,24 @@ export class EDAAppStack extends cdk.Stack {
     });
 
     //create DLQ
-    const dlq = new sqs.Queue(this, "DLQ",{
+    const dlq = new sqs.Queue(this, "DLQ", {
       queueName: "ImageProcessingDLQ",
       receiveMessageWaitTime: cdk.Duration.seconds(10),
 
     })
 
     // Integration infrastructure
+
+    //DynamoDB Table
+    const imageDataTable = new dynamodb.Table(this, 'ImageDataTable', {
+      partitionKey: {
+        name: 'filename',
+        type: dynamodb.AttributeType.STRING
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY
+    })
+
     const imageProcessQueue = new sqs.Queue(this, "img-created-queue", {
       receiveMessageWaitTime: cdk.Duration.seconds(10),
       deadLetterQueue: {
@@ -102,7 +114,7 @@ export class EDAAppStack extends cdk.Stack {
     // Permissions
 
     imagesBucket.grantRead(processImageFn);
-    
+
     mailerFn.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
