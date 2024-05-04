@@ -34,15 +34,26 @@ export const handler: SQSHandler = async (event: any) => {
                 const srcBucket = s3e.bucket.name;
                 // Object key may have spaces or unicode non-ASCII characters.
                 const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
-                try {
-                    const { name, email, message }: ContactDetails = {
+
+                // check if it is DLQ message
+                const isRejection = record.eventSource === "aws:sqs" && record.eventSourceARN.includes("DLQ");
+
+                const { name, email, message }: ContactDetails = isRejection
+                    ? {
+                        name: "The Photo Album",
+                        email: SES_EMAIL_FROM,
+                        message: `Failed to process image due to unsupported file format: ${srcKey}`,
+                    }
+                    : {
                         name: "The Photo Album",
                         email: SES_EMAIL_FROM,
                         message: `We received your Image. Its URL is s3://${srcBucket}/${srcKey}`,
                     };
+
+                try {
                     const params = sendEmailParams({ name, email, message });
                     await client.send(new SendEmailCommand(params));
-                } catch (error: unknown) {
+                } catch (error) {
                     console.log("ERROR is: ", error);
                     // return;
                 }
@@ -69,7 +80,7 @@ function sendEmailParams({ name, email, message }: ContactDetails) {
             },
             Subject: {
                 Charset: "UTF-8",
-                Data: `New image Upload`,
+                Data: `New image Upload notification`,
             },
         },
         Source: SES_EMAIL_FROM,
@@ -77,7 +88,7 @@ function sendEmailParams({ name, email, message }: ContactDetails) {
     return parameters;
 }
 
-function getHtmlContent({ name, email, message }: ContactDetails) {
+function getHtmlContent({ name, email, message }: ContactDetails): string {
     return `
     <html>
       <body>
@@ -93,12 +104,12 @@ function getHtmlContent({ name, email, message }: ContactDetails) {
 }
 
 // For demo purposes - not used here.
-function getTextContent({ name, email, message }: ContactDetails) {
-    return `
-    Received an Email. 📬
-    Sent from:
-        👤 ${name}
-        ✉️ ${email}
-    ${message}
-  `;
-}
+// function getTextContent({ name, email, message }: ContactDetails) {
+//     return `
+//     Received an Email. 📬
+//     Sent from:
+//         👤 ${name}
+//         ✉️ ${email}
+//     ${message}
+//   `;
+// }
