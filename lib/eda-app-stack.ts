@@ -10,8 +10,6 @@ import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as iam from "aws-cdk-lib/aws-iam";
 
 import { Construct } from "constructs";
-// import * as sqs from 'aws-cdk-lib/aws-sqs';
-
 export class EDAAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -22,18 +20,19 @@ export class EDAAppStack extends cdk.Stack {
       publicReadAccess: false,
     });
 
-    // Integration infrastructure
-
     //create DLQ
     const dlq = new sqs.Queue(this, "DLQ",{
-      queueName: "MyDLQ"
-    });
+      queueName: "ImageProcessingDLQ",
+      receiveMessageWaitTime: cdk.Duration.seconds(10),
 
+    })
+
+    // Integration infrastructure
     const imageProcessQueue = new sqs.Queue(this, "img-created-queue", {
       receiveMessageWaitTime: cdk.Duration.seconds(10),
       deadLetterQueue: {
         queue: dlq,
-        maxReceiveCount: 3 //The number of times a message can be retried before it enters the dead letter queue
+        maxReceiveCount: 2
       }
     });
 
@@ -94,6 +93,11 @@ export class EDAAppStack extends cdk.Stack {
 
     mailerFn.addEventSource(newImageMailEventSource);
 
+    //add DLQ event source to mailerFn
+    const dlqEventSource = new events.SqsEventSource(dlq, {
+      batchSize: 1
+    });
+    mailerFn.addEventSource(dlqEventSource);
 
     // Permissions
 
@@ -115,6 +119,12 @@ export class EDAAppStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, "bucketName", {
       value: imagesBucket.bucketName,
+    });
+    new cdk.CfnOutput(this, "DLQArn", {
+      value: dlq.queueArn,
+    });
+    new cdk.CfnOutput(this, "mailerQueueURL", {
+      value: mailerQ.queueUrl
     });
   }
 }
