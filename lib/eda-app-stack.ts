@@ -9,12 +9,14 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import { SES_EMAIL_FROM, SES_EMAIL_TO, SES_REGION } from "../env";
 
 import { Construct } from "constructs";
 export class EDAAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    //create an S3 bucket
     const imagesBucket = new s3.Bucket(this, "images", {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
@@ -40,6 +42,7 @@ export class EDAAppStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY
     })
 
+    //create a standard queue
     const imageProcessQueue = new sqs.Queue(this, "img-created-queue", {
       receiveMessageWaitTime: cdk.Duration.seconds(10),
       deadLetterQueue: {
@@ -48,6 +51,7 @@ export class EDAAppStack extends cdk.Stack {
       }
     });
 
+    //create an SNS topic
     const newImageTopic = new sns.Topic(this, "NewImageTopic", {
       displayName: "New Image topic",
     });
@@ -66,6 +70,10 @@ export class EDAAppStack extends cdk.Stack {
         entry: `${__dirname}/../lambdas/processImage.ts`,
         timeout: cdk.Duration.seconds(15),
         memorySize: 128,
+        environment: {
+          TABLE_NAME: imageDataTable.tableName,
+          REGION: SES_REGION
+        }
       }
     );
 
@@ -77,11 +85,13 @@ export class EDAAppStack extends cdk.Stack {
     });
 
     // S3 --> SQS
+    //set up event notifications for new images upladed to the bucket
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.SnsDestination(newImageTopic)  // Changed
     );
 
+    //subscribe the image processing queue to the topic
     newImageTopic.addSubscription(
       new subs.SqsSubscription(imageProcessQueue)
     );
@@ -126,6 +136,16 @@ export class EDAAppStack extends cdk.Stack {
         resources: ["*"],
       })
     );
+    processImageFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "dynamodb:PutItem"
+        ],
+        resources: [imageDataTable.tableArn],
+      })
+    );
+
 
     // Output
 
@@ -137,6 +157,9 @@ export class EDAAppStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, "mailerQueueURL", {
       value: mailerQ.queueUrl
+    });
+    new cdk.CfnOutput(this, "ImageDataTableName", {
+      value: imageDataTable.tableName,
     });
   }
 }

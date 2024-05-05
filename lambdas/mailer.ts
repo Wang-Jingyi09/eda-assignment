@@ -7,25 +7,22 @@ import {
     SendEmailCommandInput,
 } from "@aws-sdk/client-ses";
 
-if (!SES_EMAIL_TO || !SES_EMAIL_FROM || !SES_REGION) {
-    throw new Error(
-        "Please add the SES_EMAIL_TO, SES_EMAIL_FROM and SES_REGION environment variables in an env.js file located in the root directory"
-    );
-}
-
 type ContactDetails = {
     name: string;
     email: string;
     message: string;
+    isRejection: boolean;
 };
 
 const client = new SESClient({ region: SES_REGION });
 
 export const handler: SQSHandler = async (event: any) => {
     console.log("Event ", JSON.stringify(event));
+
     for (const record of event.Records) {
         const recordBody = JSON.parse(record.body);
         const snsMessage = JSON.parse(recordBody.Message);
+        const isRejection = record.eventSourceARN.includes("DLQ");
 
         if (snsMessage.Records) {
             console.log("Record body ", JSON.stringify(snsMessage));
@@ -35,26 +32,18 @@ export const handler: SQSHandler = async (event: any) => {
                 // Object key may have spaces or unicode non-ASCII characters.
                 const srcKey = decodeURIComponent(s3e.object.key.replace(/\+/g, " "));
 
-                // check if it is DLQ message
-                const isRejection = record.eventSource === "aws:sqs" && record.eventSourceARN.includes("DLQ");
-
-                const { name, email, message }: ContactDetails = isRejection
-                    ? {
-                        name: "The Photo Album",
-                        email: SES_EMAIL_FROM,
-                        message: `Failed to process image due to unsupported file format: ${srcKey}`,
-                    }
-                    : {
-                        name: "The Photo Album",
-                        email: SES_EMAIL_FROM,
-                        message: `We received your Image. Its URL is s3://${srcBucket}/${srcKey}`,
-                    };
-
+                const { name, email, message, }: ContactDetails = {
+                    name: "The Photo Album",
+                    email: SES_EMAIL_FROM,
+                    message: isRejection ? `Failed to process your image due to an unsupported file type: ${srcKey}.` : `We received your Image. Its URL is s3://${srcBucket}/${srcKey}`,
+                    isRejection: isRejection
+                };
+                const params = sendEmailParams({ name, email, message, isRejection });
                 try {
-                    const params = sendEmailParams({ name, email, message });
                     await client.send(new SendEmailCommand(params));
-                } catch (error) {
-                    console.log("ERROR is: ", error);
+                    console.log("Email sent successfully.")
+                } catch (error: unknown) {
+                    console.log("ERROR in sending email: ", error);
                     // return;
                 }
             }
@@ -62,7 +51,7 @@ export const handler: SQSHandler = async (event: any) => {
     }
 };
 
-function sendEmailParams({ name, email, message }: ContactDetails) {
+function sendEmailParams({ name, email, message, isRejection }: ContactDetails) {
     const parameters: SendEmailCommandInput = {
         Destination: {
             ToAddresses: [SES_EMAIL_TO],
@@ -71,7 +60,7 @@ function sendEmailParams({ name, email, message }: ContactDetails) {
             Body: {
                 Html: {
                     Charset: "UTF-8",
-                    Data: getHtmlContent({ name, email, message }),
+                    Data: getHtmlContent({ name, email, message, isRejection }),
                 },
                 // Text: {.           // For demo purposes
                 //   Charset: "UTF-8",
@@ -80,7 +69,7 @@ function sendEmailParams({ name, email, message }: ContactDetails) {
             },
             Subject: {
                 Charset: "UTF-8",
-                Data: `New image Upload notification`,
+                Data: isRejection ? `File Type Rejection Notification` : `Image Upload notification`,
             },
         },
         Source: SES_EMAIL_FROM,
@@ -88,7 +77,7 @@ function sendEmailParams({ name, email, message }: ContactDetails) {
     return parameters;
 }
 
-function getHtmlContent({ name, email, message }: ContactDetails): string {
+function getHtmlContent({ name, email, message, isRejection }: ContactDetails): string {
     return `
     <html>
       <body>
@@ -97,7 +86,7 @@ function getHtmlContent({ name, email, message }: ContactDetails): string {
           <li style="font-size:18px">👤 <b>${name}</b></li>
           <li style="font-size:18px">✉️ <b>${email}</b></li>
         </ul>
-        <p style="font-size:18px">${message}</p>
+        <p style="font-size:18px">${isRejection ? `Unsupported file type detected: ${message}` : message}</p>
       </body>
     </html> 
   `;

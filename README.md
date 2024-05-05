@@ -13,7 +13,7 @@ e.g.
 
 + Confirmation Mailer - Fully implemented.
 + Rejection Mailer - Fully implemented.
-+ Process Image - Partially working
++ Process Image - Fully working
 
 ### Phase 2 (if relevant).
 
