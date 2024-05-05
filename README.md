@@ -11,8 +11,7 @@ __YouTube Demo link__ - [The URL of the video demonstration of the app.]
 + Rejection Mailer - Fully implemented.
 + Process Image - Fully working
 
-### Phase 2 (if relevant).
-
+### Phase 2 
 
 + Confirmation Mailer - Fully implemented.
 + Rejection Mailer - Fully implemented.
@@ -20,15 +19,14 @@ __YouTube Demo link__ - [The URL of the video demonstration of the app.]
 + Update Table - Fully working.
 + Process Delete - Fully implemented.
 
-### Phase 3 (if relevant).
-
-[ List the Lambda functions in this phase's architecture and state their working status.]
-
-e.g.
+### Phase 3 
 
 + Confirmation Mailer - Fully implemented.
-+ Process Image - Fully implemented.
-+ Update Table - Not implemented.
++ Rejection Mailer - Fully implemented.
++ Process Image - Fully working.
++ Update Table - Fully implemented.
 + Delete Mailer - Fully implemented..
-+ etc
-+ etc
+
+#### Self-learning
++ https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_sns.Subscription.html
++ https://docs.amazonaws.cn/en_us/lambda/latest/dg/with-ddb-example.html
