@@ -56,6 +56,11 @@ export class EDAAppStack extends cdk.Stack {
       displayName: "New Image topic",
     });
 
+    //the second topic
+    const deleteAndUpdateTopic = new sns.Topic(this, "DeleteAndUpdateTopic", {
+      displayName: "Delete Image and Update Description Topic",
+    });
+
     const mailerQ = new sqs.Queue(this, "mailer-queue", {
       receiveMessageWaitTime: cdk.Duration.seconds(10),
     });
@@ -84,12 +89,60 @@ export class EDAAppStack extends cdk.Stack {
       entry: `${__dirname}/../lambdas/mailer.ts`,
     });
 
+    //delete lambda
+    const processDeleteFn = new lambdanode.NodejsFunction(this, "ProcessDeleteFunction", {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/processDelete.ts`,
+      timeout: cdk.Duration.seconds(15),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: imageDataTable.tableName,
+        REGION: SES_REGION
+      }
+    });
+
+    //update table lambda
+    const updateTableFn = new lambdanode.NodejsFunction(this, "UpdateTableFn", {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/updateTable.ts`,
+      timeout: cdk.Duration.seconds(15),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: imageDataTable.tableName,
+        REGION: SES_REGION
+      }
+    })
+
+    deleteAndUpdateTopic.addSubscription(
+      new subs.LambdaSubscription(processDeleteFn)
+    );
+    deleteAndUpdateTopic.addSubscription(
+      new subs.LambdaSubscription(updateTableFn, {
+        filterPolicy: {
+          comment_type: sns.SubscriptionFilter.stringFilter({
+            allowlist: ["Caption"]
+          })
+        }
+      })
+    )
+
+
     // S3 --> SQS
     //set up event notifications for new images upladed to the bucket
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
-      new s3n.SnsDestination(newImageTopic)  // Changed
+      new s3n.SnsDestination(newImageTopic) 
     );
+
+    imagesBucket.addEventNotification(
+      s3.EventType.OBJECT_REMOVED_DELETE,
+      new s3n.SnsDestination(deleteAndUpdateTopic)
+    );
+
+    // imagesBucket.addEventNotification(
+    //   s3.EventType.OBJECT_CREATED_PUT,
+    //   new s3n.SnsDestination(deleteAndUpdateTopic)
+    // );
 
     //subscribe the image processing queue to the topic
     newImageTopic.addSubscription(
@@ -124,6 +177,8 @@ export class EDAAppStack extends cdk.Stack {
     // Permissions
 
     imagesBucket.grantRead(processImageFn);
+    imageDataTable.grantReadWriteData(processDeleteFn);
+    imageDataTable.grantReadWriteData(updateTableFn);
 
     mailerFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -149,13 +204,22 @@ export class EDAAppStack extends cdk.Stack {
 
     // Output
 
+    new cdk.CfnOutput(this, "NewImageTopicArn", {
+      value: newImageTopic.topicArn,
+      description: "ARN of the SNS topic for new images",
+    });
+    new cdk.CfnOutput(this, "DeleteAndUpdateTopicArn", {
+      value: deleteAndUpdateTopic.topicArn,
+      description: "ARN of the SNS topic for delete and update operations",
+    });
+
     new cdk.CfnOutput(this, "bucketName", {
       value: imagesBucket.bucketName,
     });
     new cdk.CfnOutput(this, "DLQArn", {
       value: dlq.queueArn,
     });
-    new cdk.CfnOutput(this, "mailerQueueURL", {
+    new cdk.CfnOutput(this, "MailerQueueURL", {
       value: mailerQ.queueUrl
     });
     new cdk.CfnOutput(this, "ImageDataTableName", {
